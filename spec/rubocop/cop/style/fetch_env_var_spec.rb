@@ -319,7 +319,63 @@ RSpec.describe RuboCop::Cop::Style::FetchEnvVar, :config do
       end
     end
 
-    context 'and followed by a variable or method' do
+    context 'and followed by a basic literal' do
+      context 'when the node is the left end of `||` chains' do
+        it 'registers an offense' do
+          expect_offense(<<~RUBY)
+            ENV['X'] || 'y'
+            ^^^^^^^^ Use `ENV.fetch('X', 'y')` instead of `ENV['X'] || 'y'`.
+          RUBY
+
+          expect_correction(<<~RUBY)
+            ENV.fetch('X', 'y')
+          RUBY
+        end
+      end
+
+      context 'when the node is between `||`s' do
+        it 'registers an offense' do
+          expect_offense(<<~RUBY)
+            z || ENV['X'] || 'y'
+                 ^^^^^^^^ Use `ENV.fetch('X', 'y')` instead of `ENV['X'] || 'y'`.
+          RUBY
+
+          expect_correction(<<~RUBY)
+            z || ENV.fetch('X', 'y')
+          RUBY
+        end
+      end
+    end
+
+    context 'and followed by a composite literal' do
+      context 'when the node is the left end of `||` chains' do
+        it 'registers an offense' do
+          expect_offense(<<~RUBY)
+            ENV['X'] || { a: 1, b: 2 }
+            ^^^^^^^^ Use `ENV.fetch('X') { { a: 1, b: 2 } }` instead of `ENV['X'] || { a: 1, b: 2 }`.
+          RUBY
+
+          expect_correction(<<~RUBY)
+            ENV.fetch('X') { { a: 1, b: 2 } }
+          RUBY
+        end
+      end
+
+      context 'when the node is between `||`s' do
+        it 'registers an offense' do
+          expect_offense(<<~RUBY)
+            z || ENV['X'] || { a: 1, b: 2 }
+                 ^^^^^^^^ Use `ENV.fetch('X') { { a: 1, b: 2 } }` instead of `ENV['X'] || { a: 1, b: 2 }`.
+          RUBY
+
+          expect_correction(<<~RUBY)
+            z || ENV.fetch('X') { { a: 1, b: 2 } }
+          RUBY
+        end
+      end
+    end
+
+    context 'and followed by a variable or a no receiver method' do
       context 'when the node is the left end of `||` chains' do
         it 'registers an offense' do
           expect_offense(<<~RUBY)

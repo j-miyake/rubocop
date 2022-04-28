@@ -12,7 +12,8 @@ module RuboCop
       # @example
       #   # bad
       #   ENV['X']
-      #   ENV['X'] || z
+      #   ENV['X'] || 'string literal'
+      #   ENV['X'] || some_method
       #   x = ENV['X']
       #
       #   ENV['X'] || y.map do |a|
@@ -21,7 +22,8 @@ module RuboCop
       #
       #   # good
       #   ENV.fetch('X')
-      #   ENV.fetch('X') { z }
+      #   ENV.fetch('X', 'string literal')
+      #   ENV.fetch('X') { some_method }
       #   x = ENV.fetch('X')
       #
       #   ENV.fetch('X') do
@@ -39,7 +41,8 @@ module RuboCop
 
         # rubocop:disable Layout/LineLength
         MSG_DEFAULT_NIL = 'Use `ENV.fetch(%<key>s)` or `ENV.fetch(%<key>s, nil)` instead of `ENV[%<key>s]`.'
-        MSG_DEFAULT_RHS_SINGLE = 'Use `ENV.fetch(%<key>s) { %<default>s }` instead of `ENV[%<key>s] || %<default>s`.'
+        MSG_DEFAULT_RHS_SINGLE_ARG_STYLE = 'Use `ENV.fetch(%<key>s, %<default>s)` instead of `ENV[%<key>s] || %<default>s`.'
+        MSG_DEFAULT_RHS_SINGLE_BLOCK_STYLE = 'Use `ENV.fetch(%<key>s) { %<default>s }` instead of `ENV[%<key>s] || %<default>s`.'
         MSG_DEFAULT_RHS_MULTI = 'Use `ENV.fetch(%<key>s)` with a block containing `%<default>s ...`'
         # rubocop:enable Layout/LineLength
 
@@ -169,20 +172,30 @@ module RuboCop
           "ENV.fetch(#{expression.source}, nil)"
         end
 
-        def new_code_default_rhs(node, expression)
-          parent = node.parent
-
-          if parent.rhs.single_line?
-            "ENV.fetch(#{expression.source}) { #{parent.rhs.source} }"
+        def new_code_default_rhs_single_line(node, expression)
+          if node.parent.rhs.basic_literal?
+            "ENV.fetch(#{expression.source}, #{node.parent.rhs.source})"
           else
-            default = parent.rhs.source.split("\n").map do |line|
-              "#{indent(parent, offset: indentation_width)}#{line}"
-            end.join("\n")
-            <<~NEW_CODE.chomp
-              ENV.fetch(#{expression.source}) do
-              #{default}
-              end
-            NEW_CODE
+            "ENV.fetch(#{expression.source}) { #{node.parent.rhs.source} }"
+          end
+        end
+
+        def new_code_default_rhs_multiline(node, expression)
+          default = node.parent.rhs.source.split("\n").map do |line|
+            "#{indent(node.parent, offset: indentation_width)}#{line}"
+          end.join("\n")
+          <<~NEW_CODE.chomp
+            ENV.fetch(#{expression.source}) do
+            #{default}
+            end
+          NEW_CODE
+        end
+
+        def new_code_default_rhs(node, expression)
+          if node.parent.rhs.single_line?
+            new_code_default_rhs_single_line(node, expression)
+          else
+            new_code_default_rhs_multiline(node, expression)
           end
         end
 
@@ -236,7 +249,13 @@ module RuboCop
         end
 
         def message_template_for(rhs_node)
-          rhs_node.single_line? ? MSG_DEFAULT_RHS_SINGLE : MSG_DEFAULT_RHS_MULTI
+          if rhs_node.multiline?
+            MSG_DEFAULT_RHS_MULTI
+          elsif rhs_node.basic_literal?
+            MSG_DEFAULT_RHS_SINGLE_ARG_STYLE
+          else
+            MSG_DEFAULT_RHS_SINGLE_BLOCK_STYLE
+          end
         end
 
         def indentation_width
